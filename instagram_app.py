@@ -15,6 +15,23 @@ def run(operation):
     load_dotenv()
     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
+
+    st.markdown("""
+<h1 style='
+    background: linear-gradient(to right, #C13584, #F56040); 
+    color: white; 
+    padding: 20px; 
+    border-radius: 10px; 
+    text-align: center; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    font-family: "Arial", sans-serif;
+'>
+    <span style='margin-right: 15px;'>📸</span>Instagram Post Manager 
+    <span style='margin-left: 15px;'>✨</span>
+</h1>
+""", unsafe_allow_html=True)
+    st.divider()
+
     # Initialize InstagramAPI instance
     try:
         api = InstagramAPI()
