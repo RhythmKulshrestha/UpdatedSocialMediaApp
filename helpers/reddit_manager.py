@@ -1,9 +1,10 @@
 import praw
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -199,6 +200,272 @@ class RedditManager:
         except Exception as e:
             self.logger.error(f"Error fetching posts: {str(e)}")
             return []
+
+
+
+
+
+
+    def generate_post_title(
+        self, 
+        topic: str, 
+        tone: str = 'informative', 
+        additional_context: Optional[str] = None
+    ) -> str:
+        """
+        Generate a catchy and engaging Reddit post title using Gemini AI
+        
+        Args:
+            topic: Main subject of the post
+            tone: Writing tone to influence title style
+            additional_context: Optional additional context for title generation
+        
+        Returns:
+            Generated post title
+        """
+        MAX_ATTEMPTS = 3
+        
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                # Construct a prompt for title generation
+                prompt = (
+                    f"Create an attention-grabbing Reddit post title about {topic}. "
+                    f"The tone should be {tone}. "
+                    "Make it concise, intriguing, and likely to encourage clicks and comments. "
+                    "Aim for 8-12 words. Use Reddit's typical engaging title styles. "
+                    "Avoid clickbait, but make it compelling."
+                )
+                
+                if additional_context:
+                    prompt += f" Additional context: {additional_context}"
+
+                # Use Gemini Pro model for title generation
+                model = genai.GenerativeModel('gemini-pro')
+                
+                safety_settings = [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                ]
+                
+                response = model.generate_content(
+                    prompt, 
+                    safety_settings=safety_settings
+                )
+                
+                # Check and process generated title
+                if response.text:
+                    generated_title = response.text.strip()
+                    
+                    # Additional title validation
+                    words = generated_title.split()
+                    if 5 <= len(words) <= 15:
+                        self.logger.info(f"Generated title for topic: {topic}")
+                        return generated_title
+                
+                self.logger.warning(f"Attempt {attempt + 1}: Invalid title generated")
+            
+            except Exception as e:
+                self.logger.error(f"Title generation error (Attempt {attempt + 1}): {str(e)}")
+        
+        # Fallback title generation
+        fallback_title = f"Exploring {topic}: Insights and Perspectives"
+        self.logger.warning(f"Returning fallback title for topic: {topic}")
+        return fallback_title
+
+
+
+
+
+    def generate_post_content(
+        self, 
+        topic: str, 
+        tone: str = 'informative', 
+        length: int = 300, 
+        additional_context: Optional[str] = None
+    ) -> str:
+        """
+        Generate post content using Google's Gemini AI with enhanced safety and regeneration
+        
+        Args:
+            topic: Main subject of the post
+            tone: Writing tone (informative, casual, humorous, etc.)
+            length: Approximate length of the content in words
+            additional_context: Optional additional context for content generation
+        
+        Returns:
+            Generated post content
+        """
+        MAX_ATTEMPTS = 3
+        
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                # Construct more constrained prompt
+                prompt = (
+                    f"Write a {tone} Reddit post about {topic}. "
+                    f"The post should be approximately {length} words long. "
+                    "Ensure the content is engaging, informative, and suitable for a general audience. "
+                    "Avoid controversial or sensitive topics. "
+                    "Use clear, straightforward language that encourages discussion."
+                )
+                
+                if additional_context:
+                    prompt += f" Additional context: {additional_context}"
+
+                # Use Gemini Pro model for text generation
+                model = genai.GenerativeModel('gemini-pro')
+                
+                # Generate content with safety settings
+                safety_settings = [
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_NONE"
+                    }
+                ]
+                
+                response = model.generate_content(
+                    prompt, 
+                    safety_settings=safety_settings
+                )
+                
+                # Check if response contains text
+                if response.text:
+                    # Extract and clean generated content
+                    generated_content = response.text.strip()
+                    
+                    # Ensure content length is appropriate
+                    words = generated_content.split()
+                    if len(words) > length * 1.5:
+                        generated_content = ' '.join(words[:int(length * 1.5)])
+                    elif len(words) < length * 0.5:
+                        # If content is too short, continue to next attempt
+                        continue
+                    
+                    self.logger.info(f"Generated content for topic: {topic}")
+                    return generated_content
+                
+                # If no text, continue to next attempt
+                self.logger.warning(f"Attempt {attempt + 1}: No content generated")
+            
+            except Exception as e:
+                self.logger.error(f"Content generation error (Attempt {attempt + 1}): {str(e)}")
+        
+        # Fallback content if all attempts fail
+        fallback_content = (
+            f"I wanted to share some thoughts about {topic}, but encountered "
+            "some technical difficulties in generating the full post. "
+            "I'd love to hear your perspectives and insights on this subject!"
+        )
+        
+        self.logger.warning(f"Returning fallback content for topic: {topic}")
+        return fallback_content
+
+
+
+class RedditPostReviewApp:
+    def __init__(self, reddit_manager):
+        """
+        Create an object for reviewing generated Reddit posts
+        
+        Args:
+            reddit_manager: Instance of RedditManager
+        """
+        self.reddit_manager = reddit_manager
+        self.generated_post = None
+
+
+
+    def review_and_publish_post(
+        self, 
+        topic: str, 
+        tone: str = 'informative', 
+        length: int = 300,
+        subreddit: str = ''
+    ) -> Optional[Dict[str, str]]:
+        """
+        Generate post content and title for review
+        
+        Args:
+            topic: Post topic
+            tone: Writing tone
+            length: Approximate post length
+            subreddit: Target subreddit (optional)
+        
+        Returns:
+            Dictionary with post details for preview
+        """
+        # Generate title using the new LLM method
+        title = self.reddit_manager.generate_post_title(topic, tone)
+        
+        # Generate content
+        content = self.reddit_manager.generate_post_content(topic, tone, length)
+
+        # Prepare and return post details for preview
+        self.generated_post = {
+            'title': title,
+            'content': content,
+            'subreddit': subreddit
+        }
+        return self.generated_post
+
+
+
+
+    def publish_generated_post(
+        self, 
+        subreddit: Optional[str] = None
+    ) -> Optional[Dict[str, str]]:
+        """
+        Publish a previously generated post to a specific subreddit
+        
+        Args:
+            subreddit: Target subreddit to publish the post
+        
+        Returns:
+            Dictionary with post details if published, None otherwise
+        """
+        # Use subreddit from earlier generation if not provided
+        if not subreddit and self.generated_post:
+            subreddit = self.generated_post.get('subreddit')
+
+        # Ensure a post has been generated and subreddit is specified
+        if not self.generated_post:
+            raise ValueError("No post has been generated to publish")
+        
+        if not subreddit:
+            raise ValueError("No subreddit specified for publication")
+
+        try:
+            post_id = self.reddit_manager.create_post(
+                subreddit_name=subreddit,
+                title=self.generated_post['title'],
+                content=self.generated_post['content']
+            )
+            
+            if post_id:
+                # Update generated post with publication details
+                self.generated_post.update({
+                    'subreddit': subreddit,
+                    'post_id': post_id
+                })
+                return self.generated_post
+        except Exception as e:
+            print(f"Error publishing post: {e}")
+        
+        return None
 
 
 

@@ -47,7 +47,8 @@ if platform == "Reddit":
             "Read Post", 
             "Update Post", 
             "Delete Post", 
-            "Metadata Analysis"
+            "Metadata Analysis",
+            "Generate AI Post"
         ]
     )
     reddit_app.run(operation)

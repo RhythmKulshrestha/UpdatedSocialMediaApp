@@ -1,7 +1,10 @@
 import streamlit as st
-from helpers.reddit_manager import RedditManager
+from helpers.reddit_manager import RedditManager,RedditPostReviewApp
 from reddit_query_agent import RedditQueryAgent
 import pandas as pd
+from dotenv import load_dotenv
+import os
+
 
 def run(operation):
 
@@ -216,6 +219,109 @@ def run(operation):
                 else:
                     st.warning("⚠️ Please enter both a subreddit name and a query.")
 
+
+
+    elif operation == "Generate AI Post":
+        st.header("✍️ Generate AI-Powered Reddit Post 🤖")
+
+        # Input container with enhanced styling
+        st.markdown("""
+        <div style='
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px;
+        '>
+        """, unsafe_allow_html=True)
+
+        # Input fields for post generation
+        topic = st.text_input("📝 Post Topic", placeholder="Enter a subject for the AI-generated post")
+        tone = st.selectbox("🎭 Tone", ["informative", "casual", "humorous", "professional"])
+        length = st.slider("📏 Post Length (words)", 100, 500, 300)
+        subreddit = st.text_input("🌐 Target Subreddit (optional)", placeholder="Leave blank to preview only")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Initialize RedditPostReviewApp instance in session state if not exists
+        if 'post_review_app' not in st.session_state:
+            st.session_state.post_review_app = RedditPostReviewApp(st.session_state.reddit_manager)
+
+        # Initialize session state for generated post if not exists
+        if 'generated_post' not in st.session_state:
+            st.session_state.generated_post = None
+        if 'post_published' not in st.session_state:
+            st.session_state.post_published = False
+
+        # Generate button
+        if st.button("🚀 Generate Post", key="generate_post_btn"):
+            # Reset previous publication state
+            st.session_state.post_published = False
+            st.session_state.generated_post = None
+            
+            if not topic:
+                st.warning("⚠️ Please enter a topic for the post.")
+            else:
+                try:
+                    # Generate the post
+                    generated_post = st.session_state.post_review_app.review_and_publish_post(
+                        topic=topic, 
+                        tone=tone, 
+                        length=length,
+                        subreddit=subreddit
+                    )
+                    
+                    # Store generated post in session state
+                    st.session_state.generated_post = generated_post
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating post: {e}")
+
+        # Display generated post if exists
+        if st.session_state.generated_post:
+            st.markdown("""
+            <div style='
+                background-color: white; 
+                padding: 20px; 
+                border-radius: 10px; 
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                margin-top: 20px;
+            '>
+            """, unsafe_allow_html=True)
+            
+            st.subheader("🔍 Generated Post Preview")
+            st.write(f"**Title:** {st.session_state.generated_post.get('title', 'N/A')}")
+            st.write("**Content:**")
+            st.write(st.session_state.generated_post.get('content', 'No content generated'))
+            
+            
+            # If subreddit is specified and post not yet published
+            if subreddit and not st.session_state.post_published:
+                # Confirmation button
+                if st.button("📤 Confirm and Post to Reddit", key="publish_button"): 
+                    try:
+                        # Publish the post
+                        published_post = st.session_state.post_review_app.publish_generated_post(subreddit)
+
+                        if published_post:
+                            # Mark post as published
+                            st.session_state.post_published = True
+                            
+                            # Success message and link
+                            st.success(f"✅ Post published successfully! Post ID: {published_post['post_id']}")
+                            post_url = f"https://www.reddit.com/r/{subreddit}/comments/{published_post['post_id']}/"
+                            st.markdown(f"[🌐 View Post on Reddit]({post_url})", unsafe_allow_html=True)
+                            
+                            # Optional: Copy URL to clipboard
+                            st.code(post_url, language="text")
+                        else:
+                            st.error("❌ Failed to publish the post.")
+                    except Exception as e:
+                        st.error(f"❌ Error publishing post: {e}")
+
+
+
+
+    
+
 # Add main function to run the Streamlit app
 def main():
     st.sidebar.title("🤖 Reddit Analytics")
@@ -228,14 +334,16 @@ def main():
             "Read Post", 
             "Update Post", 
             "Delete Post", 
-            "Metadata Analysis"
+            "Metadata Analysis",
+            "Generate AI Post"
         ],
         icons=[
             "📝", 
             "📖", 
             "♻️", 
             "🗑️", 
-            "📊"
+            "📊",
+            "📝"
         ]
     )
 
